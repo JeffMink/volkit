@@ -1,14 +1,13 @@
 # Progress
 
 ## Status
-Session 2 (Monte Carlo, binomial tree, American exercise) done locally on
-branch `feat/mc-binomial`: ruff, ruff format, mypy (strict) and pytest
-(129 tests) all pass. Item 2 gets ticked once CI is green on the PR.
+Session 2 (Monte Carlo, binomial tree, American exercise) complete: merged to
+`main` in PR #3 with CI green (129 tests). Session 3 not started.
 
 ## Checklist
 - [x] 0 Setup (repo, CI, CLAUDE.md)
 - [x] 1 Black-Scholes, Greeks, IV solver
-- [ ] 2 Monte Carlo and binomial tree (+ American exercise) (awaiting CI)
+- [x] 2 Monte Carlo and binomial tree (+ American exercise)
 - [ ] 3 Market data and raw IV surface
 - [ ] 4 SVI fitting and arbitrage checks
 - [ ] 5 Plotly visuals and Streamlit app
@@ -107,6 +106,5 @@ branch `feat/mc-binomial`: ruff, ruff format, mypy (strict) and pytest
   would speed convergence if needed.
 
 ## Next steps
-1. Open a PR for `feat/mc-binomial`, merge when CI is green, tick item 2.
-2. Session 3: market data (European index options, e.g. SPX) and the raw
+1. Session 3: market data (European index options, e.g. SPX) and the raw
    implied volatility surface.
