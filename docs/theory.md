@@ -128,7 +128,115 @@ reprices the option to within $10^{-12}$.
 
 ## Monte Carlo pricing
 
+### Estimator
+
+The price is a risk-neutral expectation, $V = e^{-rT}\mathbb{E}^{\mathbb{Q}}[g(S_T)]$,
+so it can be estimated by a sample mean. Because $\ln S_T$ is normal, $S_T$ is
+sampled exactly in one step,
+
+$$S_T = S\exp\!\left((r - q - \tfrac12\sigma^2)T + \sigma\sqrt{T}\,Z\right),
+\qquad Z \sim \mathcal{N}(0,1),$$
+
+with no time-discretisation error (path simulation is only needed for
+path-dependent payoffs). With $X_i = e^{-rT} g(S_T^{(i)})$,
+
+$$\hat V = \frac1n \sum_{i=1}^n X_i, \qquad
+\text{SE}(\hat V) = \frac{s_X}{\sqrt n}.$$
+
+By the central limit theorem the error is about $\text{SE}$, and it falls like
+$1/\sqrt n$: four times the paths for half the error. Variance reduction lowers
+the constant $s_X$ instead.
+
+### Antithetic variates
+
+If $Z \sim \mathcal{N}(0,1)$ then so is $-Z$. Use each draw twice and average:
+$\bar X_i = \tfrac12\left(X(Z_i) + X(-Z_i)\right)$. Then
+
+$$\operatorname{Var}(\bar X_i) = \tfrac12\operatorname{Var}(X)\,(1 + \rho),
+\qquad \rho = \operatorname{Corr}(X(Z), X(-Z)).$$
+
+Option payoffs are monotone in $Z$, so $\rho < 0$ and the pair average beats
+two independent draws. The pairs are independent, so the standard error is
+computed from the $n/2$ pair averages, not the $n$ individual payoffs.
+
+### Control variate
+
+Take a quantity $Y$, correlated with $X$, whose mean is known exactly. Here
+$Y = e^{-rT}S_T$, with $\mathbb{E}^{\mathbb{Q}}[Y] = S e^{-qT}$ (the discounted
+stock is a martingale). For any $\beta$, $X - \beta(Y - \mathbb{E}Y)$ is still
+unbiased, and its variance $\operatorname{Var}X - 2\beta\operatorname{Cov}(X,Y)
++ \beta^2\operatorname{Var}Y$ is minimised at
+
+$$\beta^* = \frac{\operatorname{Cov}(X,Y)}{\operatorname{Var}(Y)}, \qquad
+\operatorname{Var}_{\min} = (1 - \rho_{XY}^2)\operatorname{Var}(X).$$
+
+$\beta^*$ is the slope of a regression of $X$ on $Y$, estimated from the same
+sample; this adds a bias of order $1/n$, negligible next to the standard error.
+The control works best when the payoff is close to linear in $S_T$ (deep ITM
+calls). A consequence worth knowing: since $P = C - (Y - Ke^{-rT})$ pathwise,
+the put and the call are the same estimator after the control-variate
+adjustment and have identical standard errors.
+
 ## Binomial tree
+
+### CRR construction
+
+Split $[0, T]$ into $n$ steps of length $\Delta t = T/n$. Each step the price
+goes up by $u$ or down by $d$, with risk-neutral probability $p$ of an up-move.
+Cox, Ross and Rubinstein (1979) choose
+
+$$u = e^{\sigma\sqrt{\Delta t}}, \qquad d = 1/u, \qquad
+p = \frac{e^{(r-q)\Delta t} - d}{u - d}.$$
+
+- **Mean:** $p$ is chosen so that $pu + (1-p)d = e^{(r-q)\Delta t}$, i.e. the
+  discounted stock (with dividends reinvested) is a martingale on the tree.
+  This is what makes the tree arbitrage-free, and it makes put-call parity hold
+  exactly on the tree for every $n$.
+- **Variance:** the one-step variance of the log-return is
+  $\sigma^2\Delta t + O(\Delta t^2)$, matching Black-Scholes.
+- $d = 1/u$ makes the tree recombine: up then down returns to the same price,
+  so step $i$ has only $i+1$ nodes, $S_{i,j} = S u^j d^{i-j}$.
+- $p \in (0,1)$ requires $d < e^{(r-q)\Delta t} < u$; it fails only if
+  $\Delta t$ is too large, and volkit then raises an error.
+
+### Backward induction
+
+At expiry $V_{n,j} = g(S_{n,j})$. Each earlier node is the discounted
+risk-neutral expectation of its two successors:
+
+$$V_{i,j} = e^{-r\Delta t}\left[p\,V_{i+1,j+1} + (1-p)\,V_{i+1,j}\right].$$
+
+The cost is $O(n^2)$; storing only one time layer keeps memory at $O(n)$.
+
+### Convergence
+
+By the central limit theorem the tree's terminal log-price converges to the
+normal distribution of Black-Scholes, and the European price converges with
+error $O(1/n)$. The error oscillates in $n$ because the strike sits at a
+different position relative to the terminal nodes at each $n$; for at-the-money
+options with even $n$ it is smooth and halves when $n$ doubles. The tests
+check both.
+
+### American exercise
+
+An American option can be exercised at any time, so its holder compares the
+value of exercising now with the value of waiting, at every node:
+
+$$V_{i,j} = \max\!\left(g(S_{i,j}),\;
+e^{-r\Delta t}\left[p\,V_{i+1,j+1} + (1-p)\,V_{i+1,j}\right]\right).$$
+
+This is dynamic programming for an optimal stopping problem. The nodes where
+the first term wins form the early-exercise region; its boundary is the
+critical stock price $S^*(t)$.
+
+- **Calls, no dividends:** $C \ge S - Ke^{-rT} \ge S - K$ when $r \ge 0$, so
+  the option is always worth more alive than exercised. The American call
+  equals the European call (Merton, 1973).
+- **Calls with dividends:** holding the stock earns $q$; exercising a deep ITM
+  call early to capture it can be optimal.
+- **Puts:** exercising early gets $K$ now and earns interest on it, so a deep
+  ITM put is exercised early whenever $r > 0$. The American put has no closed
+  form, which is why numerical methods matter.
 
 ## SVI parametrisation
 
@@ -140,6 +248,10 @@ reprices the option to within $10^{-12}$.
   Liabilities. *Journal of Political Economy* 81(3).
 - R. C. Merton (1973). Theory of Rational Option Pricing. *Bell Journal of
   Economics and Management Science* 4(1).
+- J. C. Cox, S. A. Ross and M. Rubinstein (1979). Option Pricing: A
+  Simplified Approach. *Journal of Financial Economics* 7(3).
+- P. Glasserman (2003). *Monte Carlo Methods in Financial Engineering*.
+  Springer.
 - S. Manaster and G. Koehler (1982). The Calculation of Implied Variances from
   the Black-Scholes Model: A Note. *Journal of Finance* 37(1).
 - P. Jäckel (2015). Let's Be Rational. *Wilmott*, January 2015.
