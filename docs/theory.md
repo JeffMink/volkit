@@ -238,6 +238,74 @@ critical stock price $S^*(t)$.
   ITM put is exercised early whenever $r > 0$. The American put has no closed
   form, which is why numerical methods matter.
 
+## Market data and the raw surface
+
+The surface is built from one snapshot of SPX option quotes taken at time
+$t_0$. SPX options are European, so Black-Scholes implied vols carry no
+early-exercise premium.
+
+### Time to expiry
+
+$T = (\text{expiry} - t_0) / 365$ days (ACT/365), with the expiry including
+its settlement time: standard SPX options settle at the open (09:30 ET),
+SPXW weeklies at the close (16:00 ET). For a one-week option the 6.5-hour gap
+is about 4% of $T$, so it matters. $t_0$ is the time of the index's last
+price, so quotes taken after the close are not given extra time.
+
+### Forward and discount factor from put-call parity
+
+For each expiry, put-call parity gives a model-free line in the strike:
+
+$$C(K) - P(K) = D\,(F - K), \qquad D = e^{-rT}.$$
+
+A least-squares fit $C - P = a + bK$ gives $D = -b$ and $F = -a/b$. This
+uses the market's own forward, so the dividend yield never has to be
+guessed. Errors in $q$ would otherwise show up directly as skew in the
+surface.
+
+**Which strikes.** Only the 20 strikes closest to the spot price enter the
+fit. Far from the money, quotes can be stale: the real snapshot had a call
+with strike 400 quoted at 0.02 when it was worth about 6,300. Choosing
+strikes by smallest $|C-P|$ picked that pair and broke the fit. The spot only
+has to locate the money roughly.
+
+**Short expiries.** The implied rate $r = -\ln D / T$ turns an error
+$\delta D$ into $\delta r \approx \delta D / T$, so for $T = 0.02$ a 0.2%
+error in $D$ is a 10% error in $r$. For $T < 0.1$ volkit instead uses the
+median rate $\bar r$ of the longer expiries, sets $D = e^{-\bar r T}$, and
+refits only the forward. Each strike then gives $F = K + (C-P)/D$, and
+these are averaged:
+
+$$F = \frac{1}{n}\sum_i \left[K_i + \frac{C_i - P_i}{D}\right].$$
+
+Expiries whose free fit gives a rate outside $[-2\%, 15\%]$ are dropped as
+broken.
+
+### Cleaning
+
+Quotes are kept only if $\text{bid} > 0$, $\text{ask} \ge \text{bid}$, the
+spread is at most 50% of the mid, and the option is out of the money (puts
+with $K < F$, calls with $K \ge F$). By parity an ITM option carries the
+same information as the OTM option at its strike, but with a wider spread.
+Expiries under 7 days, and expiries left with fewer than 10 quotes, are
+dropped.
+
+### Implied vol with a known forward
+
+With $F$ and $D$ known, the Black (1976) price is
+
+$$C = D\left[F\,N(d_1) - K\,N(d_2)\right], \qquad
+d_{1,2} = \frac{\ln(F/K) \pm \tfrac12\sigma^2 T}{\sigma\sqrt T}.$$
+
+This is Black-Scholes-Merton with $S = F$ and $r = q = -\ln D / T$, because
+then $Se^{-qT} = FD$ and $Ke^{-rT} = KD$. So the existing solver inverts it
+unchanged.
+
+### Coordinates for SVI
+
+Each quote is stored as log-moneyness $k = \ln(K/F)$ and total implied
+variance $w = \sigma^2 T$, the variables SVI is written in.
+
 ## SVI parametrisation
 
 ## Static arbitrage conditions
@@ -252,6 +320,8 @@ critical stock price $S^*(t)$.
   Simplified Approach. *Journal of Financial Economics* 7(3).
 - P. Glasserman (2003). *Monte Carlo Methods in Financial Engineering*.
   Springer.
+- F. Black (1976). The Pricing of Commodity Contracts. *Journal of Financial
+  Economics* 3(1-2).
 - S. Manaster and G. Koehler (1982). The Calculation of Implied Variances from
   the Black-Scholes Model: A Note. *Journal of Finance* 37(1).
 - P. Jäckel (2015). Let's Be Rational. *Wilmott*, January 2015.

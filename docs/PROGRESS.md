@@ -1,14 +1,16 @@
 # Progress
 
 ## Status
-Session 2 (Monte Carlo, binomial tree, American exercise) complete: merged to
-`main` in PR #3 with CI green (129 tests). Session 3 not started.
+Session 3 (market data and raw IV surface) is done on branch
+`feat/market-data` (158 tests, ruff and mypy clean). It is not committed or
+merged yet. The branch also carries the two unmerged docs commits (session 2
+docs, CLAUDE.md engineering-decisions rule).
 
 ## Checklist
 - [x] 0 Setup (repo, CI, CLAUDE.md)
 - [x] 1 Black-Scholes, Greeks, IV solver
 - [x] 2 Monte Carlo and binomial tree (+ American exercise)
-- [ ] 3 Market data and raw IV surface
+- [x] 3 Market data and raw IV surface (on branch, not merged)
 - [ ] 4 SVI fitting and arbitrage checks
 - [ ] 5 Plotly visuals and Streamlit app
 - [ ] 6 README, deploy, v1.0
@@ -50,6 +52,33 @@ Session 2 (Monte Carlo, binomial tree, American exercise) complete: merged to
     for 5 / 30 / 50 / 100 steps, all matched to the printed digits.
   - `docs/theory.md`: Monte Carlo and binomial tree sections, with American
     exercise.
+- Session 3:
+  - `volkit.surface.forward`: `implied_forward` (OLS of C - P on K over the
+    20 strikes nearest spot: D = -slope, F = -intercept / slope),
+    `implied_forward_given_discount` (F = mean of K + (C - P) / D) and
+    `fit_forwards` (per expiry; pooled median rate for T < 0.1; drops free
+    fits with rate outside [-2%, 15%]).
+  - `volkit.surface.raw`: `time_to_expiry` (ACT/365 to settlement time),
+    `clean_quotes` (bid > 0, ask >= bid, spread <= 50% of mid, OTM only) and
+    `raw_surface` (roots filter, min 7 days, Black-76 IV via the BSM solver
+    with S = F, r = q = -ln(D)/T, min 10 quotes per expiry, k = ln(K/F),
+    w = iv^2 T).
+  - `volkit.surface.yahoo`: OCC symbol parsing (SPX AM-settled 09:30 ET,
+    SPXW and others 16:00 ET), yfinance frame conversion, `fetch_yahoo_chain`,
+    `save_snapshot` / `load_snapshot` (CSV). `scripts/fetch_snapshot.py`
+    writes `data/raw/<ticker>_<asof>.csv` (gitignored).
+  - Tests (offline): synthetic chains of exact BSM prices recover F, D to
+    about 1e-12 and a known smile to 1e-8 (1e-5 for tiny-vega wings); parity
+    holds with a different vol per strike; a stale deep-wing pair is ignored;
+    pooled and free fits; rate bounds; cleaning rules; root and min-quotes
+    filters; symbol parsing and CSV round trip.
+  - First real snapshot: `^SPX` from Yahoo, fetched 2026-11-25 ~04:55 ET
+    (market closed), asof 2026-11-24 16:54 ET, spot 7201.09, 22,858 quotes,
+    57 expiries, 3.2 MB. Raw surface: 9,870 quotes over 48 expiries
+    (8 days to 3.1 years). Free-fit rate median 4.85% (std 1.74%). ATM vol
+    about 25-26% at one week, falling to about 20% at one year. 4 expiries
+    dropped by the rate bounds (fitted D > 1 or rates of 56-65%).
+  - `docs/theory.md`: market data and raw surface section.
 
 ## Decisions
 - Python 3.12 only (`requires-python = ">=3.12"`, CI on 3.12).
@@ -89,6 +118,24 @@ Session 2 (Monte Carlo, binomial tree, American exercise) complete: merged to
   Institutions*, 4th ed., Appendix F (pp. 605-606), checked by the user from
   the book. volkit: 4.4885 (n = 5), 4.2634 (30), 4.2720 (50), 4.2781 (100).
   Test tolerance is half the last printed digit.
+- From session 3, Claude asks the user about every important engineering
+  decision (rule in CLAUDE.md).
+- Data source: Yahoo Finance via yfinance, an optional extra
+  (`uv sync --extra data`), imported only inside `fetch_yahoo_chain`. The
+  CBOE delayed-quotes endpoint returns 403 to scripts. Snapshots are saved to
+  CSV in `data/raw/` (gitignored, not redistributed). Library and tests run
+  offline from saved snapshots.
+- Forward and discount factor come from put-call parity, not external r
+  and q.
+- Forward fit uses the 20 strikes nearest spot (not smallest |C - P|, which
+  picked a stale deep-wing quote on real data).
+- Expiries with T < 0.1 use the median free-fit rate of longer expiries;
+  free fits with rate outside [-2%, 15%] are dropped.
+- Cleaning defaults: bid > 0, ask >= bid, spread <= 50% of mid, OTM only,
+  >= 7 days, >= 10 quotes per expiry; SPX surface uses roots SPX and SPXW only
+  (SPXO dropped, settlement unknown).
+- Expiry includes settlement time (SPX 09:30 ET, SPXW 16:00 ET); time is
+  ACT/365 from the underlying's last price time.
 
 ## Open issues
 - `app/` is not created yet; it is added with its first file in session 5.
@@ -104,7 +151,20 @@ Session 2 (Monte Carlo, binomial tree, American exercise) complete: merged to
 
 - CRR error oscillates in n; Richardson extrapolation or averaging n and n+1
   would speed convergence if needed.
+- The first snapshot was taken with the market closed. Yahoo's spot
+  (7201.09) is about 1.3% above the one-week parity forward (about 7107),
+  which can't be explained by carry. The cause is unknown (stale spot or stale
+  option quotes); the surface uses only F, so it is unaffected. Take a
+  snapshot during market hours (09:30-16:00 ET) and compare.
+- Free-fit rates still scatter (std 1.7%, max 11.9%); a robust fit or a
+  smooth rate curve could tighten them.
+- The 2027-06-30 SPXW expiry has a lower minimum IV (11.8%) and a higher ATM
+  IV (21.7%) than its neighbours (about 14% and 20.7%); check its forward.
+- Yahoo quotes have no timestamp of their own; `last_trade` ranges back to
+  2023 for some contracts. No volume or open-interest filter yet.
 
 ## Next steps
-1. Session 3: market data (European index options, e.g. SPX) and the raw
-   implied volatility surface.
+1. Merge `feat/market-data` (includes the docs commits) into `main`.
+2. Take a market-hours snapshot and recheck the forwards and surface.
+3. Session 4: SVI fitting per expiry and static arbitrage checks (butterfly,
+   calendar).
