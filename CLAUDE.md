@@ -34,6 +34,11 @@ uv run ruff check . && uv run mypy src   lint and types
 - Avoid look-ahead bias and survivorship issues in any data work.
 - Prefer clear, readable code over clever code. Vectorise with numpy.
 - Ask before adding dependencies or making big design changes.
+- Ask me about every important engineering decision before acting on it
+  (e.g. numerical method or algorithm choice, public API shape, data source or
+  cleaning rules, module structure, tolerances and convergence criteria).
+  Present the options with trade-offs and a recommendation, then wait for my
+  choice. Record the decision in docs/PROGRESS.md.
 - Explain the maths briefly when implementing something new; the user must be
   able to explain it in an interview.
 
