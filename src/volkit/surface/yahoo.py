@@ -68,8 +68,8 @@ def parse_symbols(symbols: pd.Series) -> pd.DataFrame:
         bad = symbols[parts.isna().any(axis=1)].tolist()
         raise ValueError(f"unrecognised option symbols: {bad[:5]}")
     date = pd.to_datetime(parts["date"], format="%y%m%d").dt.tz_localize(TZ)
-    settle = parts["root"].isin(AM_SETTLED_ROOTS).map(
-        {True: _AM_SETTLE, False: _PM_SETTLE}
+    settle = (
+        parts["root"].isin(AM_SETTLED_ROOTS).map({True: _AM_SETTLE, False: _PM_SETTLE})
     )
     return pd.DataFrame(
         {
@@ -176,6 +176,4 @@ def load_snapshot(path: str | Path) -> Snapshot:
     df["call"] = df["call"].astype(bool)
     asof = pd.Timestamp(df["asof"].iloc[0]).tz_convert(TZ)
     spot = float(df["spot"].iloc[0])
-    return Snapshot(
-        quotes=df.drop(columns=["asof", "spot"]), asof=asof, spot=spot
-    )
+    return Snapshot(quotes=df.drop(columns=["asof", "spot"]), asof=asof, spot=spot)

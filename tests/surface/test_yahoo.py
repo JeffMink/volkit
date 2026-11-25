@@ -58,8 +58,16 @@ def test_yahoo_to_quotes_columns_and_fill() -> None:
     puts = _yahoo_frame(["SPXW261127P04900000"])
     q = yahoo_to_quotes(calls, puts)
     assert list(q.columns) == [
-        "expiry", "strike", "call", "bid", "ask", "volume", "open_interest",
-        "last_trade", "root", "symbol",
+        "expiry",
+        "strike",
+        "call",
+        "bid",
+        "ask",
+        "volume",
+        "open_interest",
+        "last_trade",
+        "root",
+        "symbol",
     ]
     assert q["call"].tolist() == [True, True, False]
     assert q["strike"].tolist() == [5000.0, 5100.0, 4900.0]

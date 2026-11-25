@@ -165,5 +165,10 @@ def test_fit_forwards_skips_expiry_without_puts() -> None:
     fwd = fit_forwards(quotes, S0)
     assert fwd.empty
     assert list(fwd.columns) == [
-        "T", "forward", "discount", "rate", "pooled", "n_strikes"
+        "T",
+        "forward",
+        "discount",
+        "rate",
+        "pooled",
+        "n_strikes",
     ]

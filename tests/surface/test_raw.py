@@ -49,9 +49,7 @@ def _chain() -> pd.DataFrame:
 
 
 def test_time_to_expiry_act_365() -> None:
-    expiry = pd.Series(
-        [ASOF + pd.Timedelta(days=365), ASOF + pd.Timedelta(hours=12)]
-    )
+    expiry = pd.Series([ASOF + pd.Timedelta(days=365), ASOF + pd.Timedelta(hours=12)])
     T = time_to_expiry(expiry, ASOF)
     np.testing.assert_allclose(T, [1.0, 0.5 / 365], rtol=1e-15)
 
@@ -76,8 +74,13 @@ def test_clean_quotes_filters() -> None:
 
 def test_clean_quotes_call_at_the_forward_is_otm() -> None:
     quotes = pd.DataFrame(
-        {"expiry": "e", "strike": [100.0, 100.0], "call": [True, False],
-         "bid": [4.0, 4.0], "ask": [4.2, 4.2]}
+        {
+            "expiry": "e",
+            "strike": [100.0, 100.0],
+            "call": [True, False],
+            "bid": [4.0, 4.0],
+            "ask": [4.2, 4.2],
+        }
     )
     out = clean_quotes(quotes, pd.Series({"e": 100.0}))
     assert out["call"].tolist() == [True]
@@ -85,8 +88,7 @@ def test_clean_quotes_call_at_the_forward_is_otm() -> None:
 
 def test_clean_quotes_drops_unknown_expiry() -> None:
     quotes = pd.DataFrame(
-        {"expiry": ["e", "x"], "strike": 110.0, "call": True,
-         "bid": 1.0, "ask": 1.1}
+        {"expiry": ["e", "x"], "strike": 110.0, "call": True, "bid": 1.0, "ask": 1.1}
     )
     out = clean_quotes(quotes, pd.Series({"e": 100.0}))
     assert out["expiry"].tolist() == ["e"]
