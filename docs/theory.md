@@ -308,7 +308,130 @@ variance $w = \sigma^2 T$, the variables SVI is written in.
 
 ## SVI parametrisation
 
+### Raw SVI
+
+Gatheral's *stochastic volatility inspired* (SVI) form writes the total
+implied variance of one expiry as
+
+$$w(k) = a + b\left[\rho\,(k - m) + \sqrt{(k - m)^2 + \sigma^2}\right].$$
+
+Each parameter has a geometric meaning:
+
+| parameter | meaning |
+|---|---|
+| $a$ | vertical level |
+| $b \ge 0$ | angle between the wings |
+| $\lvert\rho\rvert < 1$ | rotation (skew) |
+| $m$ | horizontal shift of the vertex |
+| $\sigma > 0$ | curvature at the vertex |
+
+As $k \to \pm\infty$ the wings are linear with slopes $b(1+\rho)$ (right)
+and $-b(1-\rho)$ (left). The minimum is
+$a + b\sigma\sqrt{1-\rho^2}$, at $k = m - \rho\sigma/\sqrt{1-\rho^2}$.
+
+### Constraints imposed in the fit
+
+- $b \ge 0$, $\lvert\rho\rvert \le 1$, $\sigma > 0$: the shape above.
+- $a + b\sigma\sqrt{1-\rho^2} \ge 0$: total variance is never negative.
+- $b(1 + \lvert\rho\rvert) \le 2$: **Lee's moment formula**. With finite
+  moments of the underlying, $\limsup_{k\to\pm\infty} w(k)/\lvert k\rvert \le
+  2$, and the SVI wing slopes are $b(1\pm\rho)$.
+
+### Quasi-explicit fit
+
+The fit minimises $\sum_i (w(k_i) - w_i)^2$. Substituting $y = (k-m)/\sigma$,
+
+$$w = a + d\,y + c\sqrt{y^2 + 1}, \qquad c = b\sigma,\; d = \rho b\sigma,$$
+
+which is **linear** in $(a, d, c)$ for fixed $(m, \sigma)$. In these
+variables the constraints are:
+
+$$\lvert d\rvert \le c, \qquad c + \lvert d\rvert \le 2\sigma, \qquad
+a + \sqrt{c^2 - d^2} \ge 0.$$
+
+The first two form a diamond in the $(d, c)$ plane. The third is
+convex, because $\sqrt{c^2 - d^2}$ is concave on $c \ge \lvert d\rvert$. So
+for fixed $(m, \sigma)$ the problem is a convex least squares with a unique
+global minimum. It is solved in two stages:
+
+1. **Polyhedral part, exactly.** A convex QP's optimum is the
+   equality-constrained minimiser for its own set of active constraints. The
+   diamond has only 9 possible active sets: none, one of the 4 edges, or one
+   of the 4 vertices (opposite edges are parallel). For each set, the KKT
+   system
+
+   $$\begin{pmatrix} A^\top A & E^\top \\ E & 0\end{pmatrix}
+   \begin{pmatrix} x \\ \lambda\end{pmatrix} =
+   \begin{pmatrix} A^\top w \\ f\end{pmatrix}$$
+
+   gives a candidate, and the best feasible candidate is the optimum.
+2. **Minimum variance.** If that optimum has $a + \sqrt{c^2-d^2} < 0$, the
+   constraint binds. The full problem is then solved by SLSQP, with the
+   constraint written as $c^2 - d^2 - \min(a,0)^2 \ge 0$ (smooth gradient).
+   The result is projected exactly back onto the feasible set.
+
+The outer problem in $(m, \sigma)$ is low-dimensional but not convex. It is
+searched on a $15 \times 15$ grid ($m$ in the quoted $k$ range, $\sigma$
+log-spaced in $[10^{-3}, 1]$, all 225 inner problems in one numpy batch),
+then refined by bounded Nelder-Mead from the best grid point. Total
+variance is divided by its mean first, so the tolerances do not depend on
+the variance level.
+
+**Why $m$ is bounded by the quoted range.** On SPX, OTM call quotes stop
+not far above the money. The vertex of the smile then often lies to the
+right of every quote. A free $m$ moves there, and $\rho$ is then fixed by
+extrapolation rather than data. Bounding $m$ keeps the vertex on observed
+strikes. On the 2026-11-24 snapshot the optimum still sits at the bound for
+most expiries (see `PROGRESS.md`).
+
 ## Static arbitrage conditions
+
+### Butterfly (density)
+
+With $F = 1$ and undiscounted prices, the Breeden-Litzenberger relation
+says the risk-neutral density of $S_T$ is $\partial^2 C / \partial K^2$.
+Writing the call price in terms of $w(k)$ and differentiating twice gives
+the log-moneyness density
+
+$$p(k) = \frac{g(k)}{\sqrt{2\pi w(k)}}\exp\left(-\frac{d_2(k)^2}{2}\right),
+\qquad d_2 = -\frac{k}{\sqrt w} - \frac{\sqrt w}{2},$$
+
+$$g(k) = \left(1 - \frac{k\,w'}{2w}\right)^2 - \frac{w'^2}{4}\left(\frac1w +
+\frac14\right) + \frac{w''}{2}.$$
+
+So there is no butterfly arbitrage if and only if $g(k) \ge 0$ for all
+$k$. For SVI, with $x = k - m$ and $s = \sqrt{x^2 + \sigma^2}$:
+
+$$w' = b\left(\rho + \frac{x}{s}\right), \qquad w'' = \frac{b\sigma^2}{s^3}.$$
+
+The tests check $g$ against a finite-difference $\partial^2 C/\partial K^2$
+of Black prices. They also confirm that Vogt's parameters
+($a = -0.0410$, $b = 0.1331$, $\rho = 0.306$, $m = 0.3586$, $\sigma = 0.4153$,
+from Gatheral and Jacquier) give negative $g$.
+
+### Calendar
+
+With prices normalised by the forward, the value of a call at fixed
+log-moneyness must not fall with maturity, or a calendar spread would be
+an arbitrage. Black's price at fixed $k$ is increasing in $w$, so the
+condition is
+
+$$\partial_T w(k, T) \ge 0 \quad \text{for every } k,$$
+
+i.e. the slices $w(\cdot, T)$ must not cross.
+
+### What volkit checks
+
+Neither condition is enforced in the fit, only reported. Both are checked
+on two grids:
+
+- a fixed grid of 1,001 points on $k \in [-1.5, 1.5]$, shared by all
+  slices, which covers the extrapolated wings;
+- each slice's quoted range (for calendar, the overlap of the two quoted
+  ranges).
+
+A violation is $\min g < -10^{-10}$, or $\min_k (w_T - w_{T_\text{prev}}) <
+-10^{-10}$.
 
 ## References
 
@@ -326,3 +449,14 @@ variance $w = \sigma^2 T$, the variables SVI is written in.
   the Black-Scholes Model: A Note. *Journal of Finance* 37(1).
 - P. Jäckel (2015). Let's Be Rational. *Wilmott*, January 2015.
 - J. C. Hull. *Options, Futures, and Other Derivatives*. Pearson.
+- J. Gatheral (2004). A parsimonious arbitrage-free implied volatility
+  parameterization with application to the valuation of volatility
+  derivatives. Presentation, Global Derivatives & Risk Management, Madrid.
+- J. Gatheral and A. Jacquier (2014). Arbitrage-free SVI volatility surfaces.
+  *Quantitative Finance* 14(1).
+- Zeliade Systems (2009). Quasi-explicit calibration of Gatheral's SVI model.
+  Zeliade white paper.
+- R. W. Lee (2004). The moment formula for implied volatility at extreme
+  strikes. *Mathematical Finance* 14(3).
+- D. T. Breeden and R. H. Litzenberger (1978). Prices of state-contingent
+  claims implicit in option prices. *Journal of Business* 51(4).

@@ -1,17 +1,16 @@
 # Progress
 
 ## Status
-Session 3 (market data and raw IV surface) is done on branch
-`feat/market-data` (158 tests, ruff and mypy clean). It is not committed or
-merged yet. The branch also carries the two unmerged docs commits (session 2
-docs, CLAUDE.md engineering-decisions rule).
+Session 4 (SVI fit and static-arbitrage checks) is done on branch
+`feat/svi` (203 tests, ruff and mypy clean), not committed yet. Session 3
+was merged in PR #5.
 
 ## Checklist
 - [x] 0 Setup (repo, CI, CLAUDE.md)
 - [x] 1 Black-Scholes, Greeks, IV solver
 - [x] 2 Monte Carlo and binomial tree (+ American exercise)
-- [x] 3 Market data and raw IV surface (on branch, not merged)
-- [ ] 4 SVI fitting and arbitrage checks
+- [x] 3 Market data and raw IV surface
+- [x] 4 SVI fitting and arbitrage checks (on branch, not merged)
 - [ ] 5 Plotly visuals and Streamlit app
 - [ ] 6 README, deploy, v1.0
 
@@ -79,6 +78,38 @@ docs, CLAUDE.md engineering-decisions rule).
     about 25-26% at one week, falling to about 20% at one year. 4 expiries
     dropped by the rate bounds (fitted D > 1 or rates of 56-65%).
   - `docs/theory.md`: market data and raw surface section.
+  - Merged in PR #5.
+- Session 4:
+  - `volkit.surface.svi` (one module): `SVIParams`, `svi_total_variance`,
+    `svi_derivatives`, `butterfly_g` (Gatheral-Jacquier g(k)), `fit_svi`
+    (one slice, returns `SVIFit(params, rmse, n_points, success)`),
+    `fit_svi_surface` (one row per expiry, with quoted k range and RMSE in w
+    and in IV), `params_from_row`, `check_arbitrage` (butterfly and calendar
+    on a wide grid and on the quoted range).
+  - Fit: quasi-explicit. The inner QP in (a, d, c) is solved exactly by
+    active-set enumeration (9 KKT systems, batched over candidates); SLSQP
+    with analytic Jacobians is used only when min variance binds. Outer step:
+    15 x 15 (m, sigma) grid, then bounded Nelder-Mead.
+  - Tests: SVI wing slopes; w', w'' against finite differences; g = 1 for a
+    flat smile; g against a finite-difference d^2C/dK^2 of Black prices
+    (Breeden-Litzenberger) to 1e-5; Vogt's slice has g < 0; exact recovery
+    of 4 parameter sets to 1e-6 (rmse < 1e-9); bounds hold on noisy steep
+    data; RMSE close to the noise level; inner QP at least as good as
+    10-start SLSQP on 20 random problems and on a hinge case where min
+    variance binds (min w = 0 to 1e-12); batch equals row-by-row; surface
+    fit and check on synthetic slices; calendar and butterfly violations
+    flagged on hand-built slices; quoted-range checks.
+  - Real snapshot (`spx_20261124_1654.csv`, 48 expiries, 9,870 quotes): all
+    48 converged, fit time 24 s. IV RMSE median 0.53 vol points, max 2.86
+    (the 2027-06-30 expiry). Inside the quoted ranges: 0 butterfly
+    violations, 13 calendar violations (largest gap -0.0019 in w; 4 are AM/PM
+    pairs on the same date). On the wide grid [-1.5, 1.5]: 46 butterfly and
+    32 calendar violations, all from extrapolated wings. Max b(1+|rho|) =
+    0.44, far below Lee's 2.
+  - Before m was bounded, 45 of 48 fits put m beyond the highest quoted k,
+    with rho of +0.2 to +0.6 (median IV RMSE 0.49). With m in
+    [k_min, k_max], 45 of 48 sit at m = k_max, median rho -0.03.
+  - `docs/theory.md`: SVI and static-arbitrage sections.
 
 ## Decisions
 - Python 3.12 only (`requires-python = ">=3.12"`, CI on 3.12).
@@ -136,6 +167,22 @@ docs, CLAUDE.md engineering-decisions rule).
   (SPXO dropped, settlement unknown).
 - Expiry includes settlement time (SPX 09:30 ET, SPXW 16:00 ET); time is
   ACT/365 from the underlying's last price time.
+- Session 4 (SVI), all chosen by the user:
+  - Raw SVI per expiry (not SSVI), all in one module `surface/svi.py`.
+  - Quasi-explicit fit (Zeliade); objective: total variance, equal weights.
+  - Constraints in the fit: b >= 0, |rho| <= 1, sigma in [1e-3, 1],
+    Lee b(1+|rho|) <= 2, exact min variance a + b sigma sqrt(1-rho^2) >= 0
+    (convex). Butterfly and calendar arbitrage are reported, not enforced.
+  - Outer search: 15 x 15 grid, then bounded Nelder-Mead; xatol 1e-8,
+    fatol 1e-14 n mean(w)^2 (w scaled by its mean).
+  - m bounded to the quoted k range [k_min, k_max] (originally twice the
+    range); changed after the real-data fit showed the vertex escaping the
+    data.
+  - Arbitrage checks on a fixed grid of 1,001 points on [-1.5, 1.5] and on
+    each slice's quoted range; tolerance 1e-10.
+  - Grid stage vectorised (batched KKT solves). The analytic SLSQP
+    Jacobians took the real fit from 112 s to 24 s; batching alone gave
+    80 s.
 
 ## Open issues
 - `app/` is not created yet; it is added with its first file in session 5.
@@ -163,8 +210,23 @@ docs, CLAUDE.md engineering-decisions rule).
 - Yahoo quotes have no timestamp of their own; `last_trade` ranges back to
   2023 for some contracts. No volume or open-interest filter yet.
 
+- SVI vertex: on SPX the fitted m sits at the highest quoted k for 45 of 48
+  expiries, so the right wing and rho are set by extrapolation. Options:
+  SSVI (fits ATM variance and skew, no vertex needed), adding far-OTM call
+  quotes with looser cleaning, or accepting it.
+- Calendar: 13 in-range violations on real data (up to -0.0019 in w), 4 of
+  them AM/PM pairs on the same date. They are reported, not fixed. Decide
+  whether to enforce calendar in the fit (penalty or sequential fit) or move
+  to SSVI.
+- The min-variance constraint often binds on real data: one 37-day slice
+  needed 60 SLSQP fallbacks (out of 225 grid candidates plus 82 Nelder-Mead
+  steps). That is the slow path and most of the 24 s.
+- Equal weights in w let long expiries and wide-spread wings dominate;
+  spread or vega weights are an option.
+
 ## Next steps
-1. Merge `feat/market-data` (includes the docs commits) into `main`.
-2. Take a market-hours snapshot and recheck the forwards and surface.
-3. Session 4: SVI fitting per expiry and static arbitrage checks (butterfly,
-   calendar).
+1. Commit and merge `feat/svi`.
+2. Decide how to handle the SVI vertex and calendar violations (see open
+   issues): keep raw SVI, or add SSVI.
+3. Take a market-hours snapshot and recheck the forwards and surface.
+4. Session 5: plotly figures and the Streamlit app.
